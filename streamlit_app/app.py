@@ -1,13 +1,10 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-from scipy import stats
 import shap
+import sys
+sys.path.append(".")
+import pandas as pd
+from utils.model import ChurnModel 
 import matplotlib.pyplot as plt
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.linear_model import LogisticRegression
 from src.components import sidebar
 
 st.set_page_config(page_title="ByeBank!", page_icon=":heavy_dollar_sign:")
@@ -25,40 +22,10 @@ st.write("""
 
 st.write('---')
 
-# Loads the churn dataset
-df_ = pd.read_csv("./streamlit_app/data/churn_dataset.csv", sep=',', on_bad_lines='skip', index_col=False, dtype='unicode')
-df = df_.drop(columns=["RowNumber", "CustomerId", "Surname"])
-
-# extract categorical and numericals features from the dataset
-categ_lst = ["Gender", "Geography"]
-numerical_cols = list(set(df.columns) - set(["Exited", "Gender", "Geography"]))
-df[categ_lst] = df[categ_lst].astype("string")
-df[numerical_cols] = df[numerical_cols].astype("float")
-df['Exited'] = df['Exited'].astype("int")
-
-# Removing every cell with nan values present and the duplicates
-df = df.dropna()
-df = df.drop_duplicates()
-
-# Remove outliers
-df = df[(np.abs(stats.zscore(df[numerical_cols])) < 3).all(axis=1)]
-
-# subselect the dataset to be fast in explanation
-df = df[:100]
-
-# Define the model
-model = LogisticRegression(random_state=42)
+# create the churn model object
+churn_model = ChurnModel()
+df = churn_model.get_dataset(size=200)
 X, y = df.drop(columns=["Exited"]), df["Exited"]
-
-# preprocessing
-X.Geography = X.Geography.map({'France': 0, 'Germany': 1, 'Spain': 2})
-X.Gender = X.Gender.map({'Female': 0, 'Male': 1})
-
-sscaler = StandardScaler()
-X[numerical_cols] = sscaler.fit_transform(X[numerical_cols])
-
-# apply the model
-model.fit(X, y)
 
 # apply model to make prediction
 def user_input_features(categ_lst, numerical_cols):
@@ -89,24 +56,22 @@ def user_input_features(categ_lst, numerical_cols):
     features[numerical_cols] = features[numerical_cols].astype("float")
     return features
 
-single_employer = user_input_features(categ_lst, numerical_cols)
+single_employer = user_input_features(churn_model.get_categ_features(), churn_model.get_numerical_features())
 st.header("Selected Sample")
 st.dataframe(single_employer, use_container_width=True)
 
 # standardize and map the categorical values
-single_employer.Geography = single_employer.Geography.map({'France': 0, 'Germany': 1, 'Spain': 2})
-single_employer.Gender = single_employer.Gender.map({'Female': 0, 'Male': 1})
-single_employer[categ_lst] = single_employer[categ_lst].astype("float")
-single_employer[numerical_cols] = sscaler.transform(single_employer[numerical_cols])
-predict_churn = model.predict(single_employer) 
+model_trained = churn_model.load_latest_model()
+predict_churn = model_trained.predict(single_employer) 
 
 st.header("Prediction of the single employer")
 st.write(predict_churn)
 st.write("---")
 
 # Explaining the model's predictions using SHAP values
-explainer = shap.Explainer(model.predict_proba, X)
-st.dataframe(single_employer, use_container_width=True)
+explainer = shap.Explainer(model_trained.predict_proba, X)
+print(single_employer.info())
+print(single_employer.head())
 shap_values = explainer(single_employer)
 
 st.header('Probability of Churning')
