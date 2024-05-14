@@ -2,3 +2,4 @@ cookiecutter
 shap==0.42.0
 streamlit
 matplotlib
+ipython
