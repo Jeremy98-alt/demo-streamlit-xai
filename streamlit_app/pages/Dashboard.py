@@ -1,4 +1,4 @@
 import streamlit as st
 
-st.title("Page 1")
+st.title("Dashboard")
 st.write("This is a dummy page for streamlit_app.")

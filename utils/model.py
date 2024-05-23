@@ -6,7 +6,7 @@ import os
 import pickle
 import re
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OrdinalEncoder, StandardScaler, OneHotEncoder, MinMaxScaler
+from sklearn.preprocessing import OrdinalEncoder, StandardScaler, LabelEncoder, MinMaxScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
 
@@ -16,7 +16,6 @@ class ChurnModel:
         self.df = None
         self.model = None
         self.preprocessor = None
-        self.sscaler = StandardScaler()
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
         logging.basicConfig(level=logging.INFO)
@@ -24,13 +23,13 @@ class ChurnModel:
     def load_dataset(self):
         self.logger.info("Loading dataset...")
         df_ = pd.read_csv(self.dataset_path, sep=',', on_bad_lines='skip', index_col=False, dtype='unicode')
-        self.df = df_.drop(columns=["RowNumber", "CustomerId", "Surname", "Gender", "Geography"])
+        self.df = df_.drop(columns=["RowNumber", "CustomerId", "Surname"]) #, "Gender", "Geography"
 
     def get_dataset(self, size=100):
         self.load_dataset()
         self.preprocess_data()
         self.select_subset(size)
-        return self.df.astype(float)
+        return self.df
     
     def get_categ_features(self):
         return ["Gender", "Geography"]
@@ -41,11 +40,15 @@ class ChurnModel:
     def preprocess_data(self):
         self.logger.info("Preprocessing data...")
         # extract categorical and numericals features from the dataset
-        #categ_lst = self.get_categ_features()
+        categ_lst = self.get_categ_features()
         numerical_cols = self.get_numerical_features()
-        #self.df[categ_lst] = self.df[categ_lst].astype("string")
+        self.df[categ_lst] = self.df[categ_lst].astype("string")
         self.df[numerical_cols] = self.df[numerical_cols].astype("float")
         self.df['Exited'] = self.df['Exited'].astype("int")
+
+        # map Gender and Geography
+        self.df["Geography"] = self.df["Geography"].map({'France': 0, 'Germany': 1, 'Spain': 2})
+        self.df["Gender"]= self.df["Gender"].map({'Female': 0, 'Male': 1})
 
         # Removing every cell with nan values present and the duplicates
         self.df = self.df.dropna()
@@ -62,15 +65,21 @@ class ChurnModel:
     def define_model(self):
         # Define the column transformer
         numerical_cols = self.get_numerical_features()
+        #categ_lst = self.get_categ_features()
 
-        self.sscaler = self.sscaler.fit(self.df[numerical_cols])
-        self.df[numerical_cols] = self.sscaler.transform(self.df[numerical_cols])
-        
+        preprocessor = ColumnTransformer(
+            transformers=[
+                #('cat', OrdinalEncoder(), categ_lst),
+                ('num', StandardScaler(), numerical_cols)
+            ]
+        )
+        self.preprocessor = preprocessor
+
         # Define the pipeline
-        self.model = LogisticRegression(random_state=42)
-
-    def get_sscaler(self, dt):
-        return self.sscaler.transform(dt)
+        self.model = Pipeline([
+            ('preprocessor', self.preprocessor),
+            ('classifier', LogisticRegression(random_state=42))
+        ])
     
     def train_model(self):
         self.logger.info("Training the model...")
